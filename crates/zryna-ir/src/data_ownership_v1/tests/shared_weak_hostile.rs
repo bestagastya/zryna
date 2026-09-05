@@ -157,7 +157,7 @@ fn weak_upgrade_branch_rejects_expired_edge_forged_shared_owner_and_extra_parame
 }
 
 #[test]
-fn shared_weak_rejects_invalid_cleanup_and_missing_drop_actions() {
+fn shared_weak_rejects_invalid_cleanup_plan_and_place_ids() {
     let fixture = SharedWeakFixture::new();
     let seed = fixture.seed_operations();
 

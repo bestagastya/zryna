@@ -1397,10 +1397,10 @@ fn implicit_weak_is_not_releasable_as_explicit() {
 
 /// Proves the count-state transition sequence (SW4): `StrongReleaseBegin` enters the `pending_last_strong`
 /// phase, rejects premature `StrongReleaseFinish` while `payload_initialized` is true, and executes
-/// `StrongReleaseFinish` once the payload drop has completed.
+/// `StrongReleaseFinish` when directly supplied with `payload_initialized=false` as post-drop state input.
 ///
-/// NOTE: This proves the runtime ABI count-transition state machine. Recursive payload drop execution
-/// and drop receipt production are compiler/codegen concerns tracked under #261/#263.
+/// NOTE: This proves the runtime ABI count-transition state machine on post-drop state input, not proof
+/// that payload drop execution or receipt production occurred (which remain tracked under #260).
 #[test]
 fn last_strong_count_transition_before_implicit_weak_finish() {
     let strong_multi = ControlState {
