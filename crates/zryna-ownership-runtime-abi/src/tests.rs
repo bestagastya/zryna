@@ -1274,6 +1274,341 @@ fn non_success_control_results_are_zero_shaped() {
 }
 
 #[test]
+fn implicit_weak_is_not_releasable_as_explicit() {
+    let strong_live_with_explicit_weak = ControlState {
+        strong_count: 1,
+        weak_count: 2,
+        pending_last_strong: false,
+        payload_initialized: true,
+        allocated: true,
+    };
+    let strong_live_implicit_only = ControlState {
+        strong_count: 1,
+        weak_count: 1,
+        pending_last_strong: false,
+        payload_initialized: true,
+        allocated: true,
+    };
+
+    // 1. Valid release of an explicit weak handle while strong references are alive:
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::WeakRelease,
+        before: strong_live_with_explicit_weak,
+        status: RuntimeStatus::Ok,
+        bool_result: Some(false),
+        after: strong_live_implicit_only,
+    })
+    .expect("explicit weak release while strong is live must succeed");
+
+    validate_transition(TransitionClaim::WeakRelease {
+        before: 2,
+        strong: 1,
+        status: RuntimeStatus::Ok,
+        after: 1,
+        deallocated: false,
+    })
+    .expect("explicit weak release claim succeeds");
+
+    // 2. Hostile: Attempt to release the implicit weak handle while strong > 0
+    let forged_weak_zero = ControlState {
+        strong_count: 1,
+        weak_count: 0,
+        pending_last_strong: false,
+        payload_initialized: true,
+        allocated: true,
+    };
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::WeakRelease,
+            before: strong_live_implicit_only,
+            status: RuntimeStatus::Ok,
+            bool_result: Some(false),
+            after: forged_weak_zero,
+        })
+        .is_err(),
+        "implicit weak count must not be released while strong references exist"
+    );
+    assert!(
+        validate_transition(TransitionClaim::WeakRelease {
+            before: 1,
+            strong: 1,
+            status: RuntimeStatus::Ok,
+            after: 0,
+            deallocated: false,
+        })
+        .is_err(),
+        "pure weak release claim must reject dropping implicit weak to 0 while strong > 0"
+    );
+
+    // 3. Releasing an explicit weak handle on an expired control with weak_count > 1:
+    let expired_multiple_weak = ControlState {
+        strong_count: 0,
+        weak_count: 2,
+        pending_last_strong: false,
+        payload_initialized: false,
+        allocated: true,
+    };
+    let expired_one_weak = ControlState {
+        strong_count: 0,
+        weak_count: 1,
+        pending_last_strong: false,
+        payload_initialized: false,
+        allocated: true,
+    };
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::WeakRelease,
+        before: expired_multiple_weak,
+        status: RuntimeStatus::Ok,
+        bool_result: Some(false),
+        after: expired_one_weak,
+    })
+    .expect("non-last weak release on expired control must not deallocate");
+
+    // 4. Releasing the final explicit weak handle on an expired control:
+    let deallocated = ControlState {
+        strong_count: 0,
+        weak_count: 0,
+        pending_last_strong: false,
+        payload_initialized: false,
+        allocated: false,
+    };
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::WeakRelease,
+        before: expired_one_weak,
+        status: RuntimeStatus::Ok,
+        bool_result: Some(true),
+        after: deallocated,
+    })
+    .expect("final weak release on expired control must deallocate");
+
+    // 5. Hostile replay: releasing an already deallocated control
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::WeakRelease,
+            before: deallocated,
+            status: RuntimeStatus::Ok,
+            bool_result: Some(false),
+            after: deallocated,
+        })
+        .is_err(),
+        "stale weak handle release on deallocated control must fail closed"
+    );
+}
+
+#[test]
+fn last_strong_payload_before_implicit_weak_finish() {
+    let strong_multi = ControlState {
+        strong_count: 2,
+        weak_count: 1,
+        pending_last_strong: false,
+        payload_initialized: true,
+        allocated: true,
+    };
+    let strong_one = ControlState {
+        strong_count: 1,
+        weak_count: 1,
+        pending_last_strong: false,
+        payload_initialized: true,
+        allocated: true,
+    };
+    let pending_with_payload = ControlState {
+        strong_count: 0,
+        weak_count: 1,
+        pending_last_strong: true,
+        payload_initialized: true,
+        allocated: true,
+    };
+    let pending_payload_dropped = ControlState {
+        strong_count: 0,
+        weak_count: 1,
+        pending_last_strong: true,
+        payload_initialized: false,
+        allocated: true,
+    };
+    let deallocated = ControlState {
+        strong_count: 0,
+        weak_count: 0,
+        pending_last_strong: false,
+        payload_initialized: false,
+        allocated: false,
+    };
+
+    // 1. Non-last strong release decrements strong count without setting pending_last_strong
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::StrongReleaseBegin,
+        before: strong_multi,
+        status: RuntimeStatus::Ok,
+        bool_result: Some(false),
+        after: strong_one,
+    })
+    .expect("non-last strong release succeeds");
+
+    // 2. Last strong release begin enters pending_last_strong phase with payload still initialized
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::StrongReleaseBegin,
+        before: strong_one,
+        status: RuntimeStatus::Ok,
+        bool_result: Some(true),
+        after: pending_with_payload,
+    })
+    .expect("last strong release begin enters pending phase");
+
+    // 3. Hostile: Premature StrongReleaseFinish before payload is dropped
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::StrongReleaseFinish,
+            before: pending_with_payload,
+            status: RuntimeStatus::Ok,
+            bool_result: None,
+            after: deallocated,
+        })
+        .is_err(),
+        "StrongReleaseFinish must reject if payload is still initialized"
+    );
+
+    // 4. Valid StrongReleaseFinish after payload drop completes:
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::StrongReleaseFinish,
+        before: pending_payload_dropped,
+        status: RuntimeStatus::Ok,
+        bool_result: None,
+        after: deallocated,
+    })
+    .expect("StrongReleaseFinish after payload drop succeeds and deallocates");
+
+    // 5. If surviving explicit weak handles exist, StrongReleaseFinish keeps control allocated:
+    let pending_multiple_weaks = ControlState {
+        strong_count: 0,
+        weak_count: 2,
+        pending_last_strong: true,
+        payload_initialized: false,
+        allocated: true,
+    };
+    let expired_retained_for_weaks = ControlState {
+        strong_count: 0,
+        weak_count: 1,
+        pending_last_strong: false,
+        payload_initialized: false,
+        allocated: true,
+    };
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::StrongReleaseFinish,
+        before: pending_multiple_weaks,
+        status: RuntimeStatus::Ok,
+        bool_result: None,
+        after: expired_retained_for_weaks,
+    })
+    .expect("StrongReleaseFinish with surviving weak references preserves control allocation");
+
+    // 6. Hostile replay: Replayed StrongReleaseFinish after phase has ended
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::StrongReleaseFinish,
+            before: expired_retained_for_weaks,
+            status: RuntimeStatus::Ok,
+            bool_result: None,
+            after: expired_retained_for_weaks,
+        })
+        .is_err(),
+        "StrongReleaseFinish must fail closed if pending_last_strong is false"
+    );
+}
+
+#[test]
+fn forged_control_cycles_fail_closed() {
+    let pending = ControlState {
+        strong_count: 0,
+        weak_count: 2,
+        pending_last_strong: true,
+        payload_initialized: false,
+        allocated: true,
+    };
+
+    // 1. Hostile re-entrancy into pending control via WeakUpgrade:
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::WeakUpgrade,
+            before: pending,
+            status: RuntimeStatus::Ok,
+            bool_result: None,
+            after: ControlState { strong_count: 1, ..pending },
+        })
+        .is_err(),
+        "WeakUpgrade must not re-enter pending control"
+    );
+
+    // 2. Hostile re-entrancy into pending control via StrongClone or StrongReleaseBegin:
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::StrongClone,
+            before: pending,
+            status: RuntimeStatus::Ok,
+            bool_result: None,
+            after: ControlState { strong_count: 1, ..pending },
+        })
+        .is_err(),
+        "StrongClone must not run on pending control"
+    );
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::StrongReleaseBegin,
+            before: pending,
+            status: RuntimeStatus::Ok,
+            bool_result: Some(false),
+            after: pending,
+        })
+        .is_err(),
+        "StrongReleaseBegin must not run on pending control"
+    );
+
+    // 3. Hostile forged cycle back-edge release during pending phase:
+    assert!(
+        validate_transition(TransitionClaim::Control {
+            operation: LogicalOperation::WeakRelease,
+            before: pending,
+            status: RuntimeStatus::Ok,
+            bool_result: Some(false),
+            after: ControlState { weak_count: 1, ..pending },
+        })
+        .is_err(),
+        "WeakRelease must not run during pending last strong phase"
+    );
+
+    // 4. Lawful observers outside pending phase operate deterministically:
+    let live = ControlState {
+        strong_count: 1,
+        weak_count: 2,
+        pending_last_strong: false,
+        payload_initialized: true,
+        allocated: true,
+    };
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::WeakUpgrade,
+        before: live,
+        status: RuntimeStatus::Ok,
+        bool_result: None,
+        after: ControlState { strong_count: 2, ..live },
+    })
+    .expect("lawful observer WeakUpgrade on live control succeeds");
+
+    let expired = ControlState {
+        strong_count: 0,
+        weak_count: 1,
+        pending_last_strong: false,
+        payload_initialized: false,
+        allocated: true,
+    };
+    validate_transition(TransitionClaim::Control {
+        operation: LogicalOperation::WeakUpgrade,
+        before: expired,
+        status: RuntimeStatus::Expired,
+        bool_result: None,
+        after: expired,
+    })
+    .expect("lawful observer WeakUpgrade on expired control returns Expired deterministically");
+}
+
+#[test]
 fn vec_failures_use_only_operation_specific_atomic_statuses() {
     let (_sources, linear, linux) = authorities();
     let verified = verify_v1(raw_v1(&linear, &linux), &linear, &linux).expect("runtime ABI");

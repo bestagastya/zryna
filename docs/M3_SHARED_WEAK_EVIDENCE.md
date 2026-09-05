@@ -19,11 +19,15 @@ They remain regression authorities; this planning change does not claim to rerun
 | `failure_atomicity_is_bound_to_the_exact_operation_status_set` | Exact operation/status and unchanged-input claims; not a bound control allocation |
 | `layout_binding_rejects_target_and_fingerprint_mismatch` | Sealed layout identity; not ownership of a live control graph |
 | `contextual_transition_claims_fail_closed_without_their_authority` | Context-sensitive claims require their authority; not complete SW1–SW5 implementation |
+| `implicit_weak_is_not_releasable_as_explicit` | Live/expired explicit Weak release distinguishes implicit count; strong-live deallocation and stale replay rejected (#260) |
+| `last_strong_payload_before_implicit_weak_finish` | Last versus non-last release sequencing; premature finish before payload drop rejected, finish after drop verified (#260) |
+| `forged_control_cycles_fail_closed` | Pending-control re-entrancy, forged cycle back-edges rejected fail-closed; lawful observers deterministic (#260) |
 
-Existing IR raw/opaque operations and upgrade successor typing are authority to extend and test,
-not evidence that source operations work. Existing #81/#82 cleanup, borrow, fault/drop-trace and
-resource tests must remain unchanged and green. Their limited source shapes do not prove generic
-nested handle cleanup or owned CFG composition.
+Existing IR raw/opaque operations and upgrade successor typing are extended and verified by the
+#260 verifier suite (`crates/zryna-ir/src/data_ownership_v1/tests/shared_weak_*.rs`), providing
+independent multi-target layout verification across all payload categories, synthesized upgrade owner
+binding, and deterministic hostile rejection. Existing #81/#82 cleanup, borrow, fault/drop-trace and
+resource tests remain unchanged and green.
 
 ## Required named matrices
 

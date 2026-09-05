@@ -29,6 +29,10 @@ mod mixed_replacement_authority;
 mod mixed_replacement_authority_fixture;
 mod opaque_handle_slots;
 mod opaque_handle_slots_fixture;
+mod shared_weak_fixture;
+mod shared_weak_hostile;
+mod shared_weak_positive;
+mod shared_weak_upgrade;
 
 use super::{
     Errors, MAX_ACTIVE_BORROWS_PER_FUNCTION, MAX_AGGREGATE_OPERANDS, MAX_BLOCK_PARAMETERS,
