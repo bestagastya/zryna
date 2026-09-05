@@ -1274,6 +1274,7 @@ fn non_success_control_results_are_zero_shaped() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn implicit_weak_is_not_releasable_as_explicit() {
     let strong_live_with_explicit_weak = ControlState {
         strong_count: 1,
@@ -1402,6 +1403,7 @@ fn implicit_weak_is_not_releasable_as_explicit() {
 /// NOTE: This proves the runtime ABI count-transition state machine on post-drop state input, not proof
 /// that payload drop execution or receipt production occurred (which remain tracked under #260).
 #[test]
+#[allow(clippy::too_many_lines)]
 fn last_strong_count_transition_before_implicit_weak_finish() {
     let strong_multi = ControlState {
         strong_count: 2,

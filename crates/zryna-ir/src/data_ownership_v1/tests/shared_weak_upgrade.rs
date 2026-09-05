@@ -35,6 +35,7 @@ fn weak_upgrade_branch_synthesizes_shared_owner_on_success_and_preserves_weak_ow
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn weak_upgrade_branch_with_forwarded_arguments_binds_correctly() {
     let fixture = SharedWeakFixture::new();
     let mut raw = program(&fixture.sources, &fixture.linear, &fixture.linux);
