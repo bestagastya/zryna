@@ -20,14 +20,32 @@ They remain regression authorities; this planning change does not claim to rerun
 | `layout_binding_rejects_target_and_fingerprint_mismatch` | Sealed layout identity; not ownership of a live control graph |
 | `contextual_transition_claims_fail_closed_without_their_authority` | Context-sensitive claims require their authority; not complete SW1–SW5 implementation |
 | `implicit_weak_is_not_releasable_as_explicit` | Live/expired explicit Weak release distinguishes implicit count; strong-live deallocation and stale replay rejected (#260) |
-| `last_strong_payload_before_implicit_weak_finish` | Last versus non-last release sequencing; premature finish before payload drop rejected, finish after drop verified (#260) |
-| `forged_control_cycles_fail_closed` | Pending-control re-entrancy, forged cycle back-edges rejected fail-closed; lawful observers deterministic (#260) |
+| `last_strong_count_transition_before_implicit_weak_finish` | Count-transition sequencing for last vs non-last release (SW4); premature finish before payload drop rejected, finish after payload drop verified. (Recursive drop-receipt production tracked under #261/#263) (#260) |
+| `pending_control_rejects_reentrant_operations` | Fail-closed rejection of operations re-entering pending control during last-strong phase (SW5); lawful observers deterministic. (Graph-edge and cycle-witness authentication tracked under #263) (#260) |
 
 Existing IR raw/opaque operations and upgrade successor typing are extended and verified by the
-#260 verifier suite (`crates/zryna-ir/src/data_ownership_v1/tests/shared_weak_*.rs`), providing
-independent multi-target layout verification across all payload categories, synthesized upgrade owner
-binding, and deterministic hostile rejection. Existing #81/#82 cleanup, borrow, fault/drop-trace and
-resource tests remain unchanged and green.
+#260 verifier suite (`crates/zryna-ir/src/data_ownership_v1/tests/shared_weak_*.rs`). This slice provides:
+- Multi-target layout authority across all 9 declared payload categories (`Bool`, `I32`, `String`, `Shared`, `Weak`, `Struct`, `Enum`, `FixedArray`, `Vec`).
+- Verified IR operations (`SharedClone`, `WeakDowngrade`, `WeakClone`, `SharedConstruct`, `WeakUpgradeBranch`) for `String` and `I32` scalar and dynamic payloads, preserving retained sources and producing distinct owners. Operation lowering and cleanup-mask assertions for remaining aggregate categories (`Struct`, `Enum`, `FixedArray`, `Vec`, nested handles) remain tracked under #261 (Semantic Integration) and #263.
+- `WeakUpgradeBranch` terminator semantics: synthesized `Shared<T>` parameter owner on success edge, expired edge without handle, argument forwarding, and fail-closed rejection of forged expired-edge owners or parameter count mismatches (`weak_upgrade_branch_rejects_expired_edge_forged_shared_owner_and_extra_parameters`).
+- Deterministic hostile rejection for mismatched place types, wrong categories, referent mismatches, and invalid cleanup plans.
+Existing #81/#82 cleanup, borrow, fault/drop-trace and resource tests remain unchanged and green.
+
+### #260 Verifier Evidence Scope & Gap Matrix
+
+This PR intentionally progresses #260 by establishing the foundational Shared/Weak verifier evidence slice:
+- **Verified in this slice**:
+  - Multi-target layout authority (`linear32` and `linux_x86_64`) across all 9 declared payload categories (`Bool`, `I32`, `String`, `Shared`, `Weak`, `Struct`, `Enum`, `FixedArray`, `Vec`).
+  - IR operation verification (`SharedClone`, `WeakDowngrade`, `WeakClone`, `SharedConstruct`) for `String` and `I32` payloads, asserting retained sources and distinct generated owners.
+  - `WeakUpgradeBranch` terminator semantics: synthesized `Shared<T>` parameter owner on success, expired edge without handle, argument forwarding.
+  - Hostile fail-closed rejection: wrong place types (`ZRYNA-I3013`, `ZRYNA-I3014`), mismatched referent types (`ZRYNA-I3014`), forged expired-edge owners/parameters (`ZRYNA-I3007`), invalid cleanup plans (`ZRYNA-I3007`, `ZRYNA-I3012`).
+  - Runtime ABI count-state transitions: explicit vs implicit weak count distinction (SW2), last-strong begin/finish sequencing (SW4), pending control re-entrancy rejection (SW5).
+- **Explicitly Tracked Gaps & Future Milestone Allocation**:
+  - *Full operation lowering and cleanup-mask assertions for `Struct`, `Enum`, `FixedArray`, `Vec`, and nested handles*: Tracked under #261 (Semantic Integration).
+  - *Stale / moved and duplicate owner use across branches, conflicting borrows, and invalid join/binding state*: Tracked under #261 and #279 (CFG Core).
+  - *Recursive payload-drop receipt execution*: Tracked under #261 / #263.
+  - *Graph-edge cycle witnesses and multi-node reference cycles*: Tracked under #263 (Negative & Fault Matrix).
+  - *Handle-specific exact/first-extra recovery boundaries*: Tracked under #263.
 
 ## Required named matrices
 

@@ -61,7 +61,7 @@ fn weak_upgrade_branch_rejects_forged_shapes_and_mismatched_payloads() {
     // Case 0: Upgrade on Shared place instead of Weak -> ZRYNA-I3014
     // Case 1: Success block first parameter has wrong referent type (Shared<i32> instead of Shared<String>) -> ZRYNA-I3014
     // Case 2: Success block missing synthesized parameter -> ZRYNA-I3014
-    // Case 3: Expired block has unexpected extra parameter -> ZRYNA-I3014
+    // Case 3: Success block first parameter has Weak category instead of Shared -> ZRYNA-I3014
     for case in 0..4 {
         let mut raw = seed.clone();
         let function = &mut raw.modules[0].functions[0];
@@ -119,6 +119,41 @@ fn weak_upgrade_branch_rejects_forged_shapes_and_mismatched_payloads() {
         assert_eq!(first, fixture.verify(raw).expect_err("deterministic repeat"));
         fixture.verify(seed.clone()).expect("recovery after rejection");
     }
+}
+
+#[test]
+fn weak_upgrade_branch_rejects_expired_edge_forged_shared_owner_and_extra_parameters() {
+    let fixture = SharedWeakFixture::new();
+    let seed = fixture.seed_upgrade_branch();
+
+    // Expired block declares a parameter expecting a synthesized Shared<String> owner,
+    // but WeakUpgradeBranch only synthesizes an owner on the success edge.
+    let mut raw = seed.clone();
+    let function = &mut raw.modules[0].functions[0];
+    let span = function.span;
+    function.blocks[2].parameters.push(raw::ValueDefinition {
+        id: raw::ValueId(3),
+        ty: fixture.shared_string,
+        span,
+    });
+    function.places.push(raw::Place {
+        id: raw::PlaceId(3),
+        ty: fixture.shared_string,
+        span,
+        kind: raw::PlaceKind::Temporary(raw::ValueId(3)),
+    });
+    if let raw::Terminator::Return { value, .. } = &mut function.blocks[2].terminators[0].kind {
+        *value = raw::ValueId(3);
+    }
+
+    let diagnostics =
+        fixture.verify(raw.clone()).expect_err("expired edge forged parameter must fail");
+    assert!(
+        diagnostics.iter().any(|d| d.code() == "ZRYNA-I3007"),
+        "must emit ZRYNA-I3007: {diagnostics:?}"
+    );
+    assert_eq!(diagnostics, fixture.verify(raw).expect_err("deterministic repeat"));
+    fixture.verify(seed).expect("clean recovery");
 }
 
 #[test]

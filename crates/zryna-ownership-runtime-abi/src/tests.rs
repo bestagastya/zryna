@@ -1395,8 +1395,14 @@ fn implicit_weak_is_not_releasable_as_explicit() {
     );
 }
 
+/// Proves the count-state transition sequence (SW4): `StrongReleaseBegin` enters the `pending_last_strong`
+/// phase, rejects premature `StrongReleaseFinish` while `payload_initialized` is true, and executes
+/// `StrongReleaseFinish` once the payload drop has completed.
+///
+/// NOTE: This proves the runtime ABI count-transition state machine. Recursive payload drop execution
+/// and drop receipt production are compiler/codegen concerns tracked under #261/#263.
 #[test]
-fn last_strong_payload_before_implicit_weak_finish() {
+fn last_strong_count_transition_before_implicit_weak_finish() {
     let strong_multi = ControlState {
         strong_count: 2,
         weak_count: 1,
@@ -1514,8 +1520,14 @@ fn last_strong_payload_before_implicit_weak_finish() {
     );
 }
 
+/// Proves fail-closed rejection of operations attempting to re-enter a pending control during the
+/// last-strong release phase (SW5). Operations such as `WeakUpgrade`, `StrongClone`, `StrongReleaseBegin`,
+/// and `WeakRelease` are rejected while `pending_last_strong` is true, preventing re-entrant cycle mutations.
+///
+/// NOTE: This proves the ABI control-state reentrancy gate. Full graph-edge/cycle witness authentication
+/// across multi-node reference cycles is tracked under #263.
 #[test]
-fn forged_control_cycles_fail_closed() {
+fn pending_control_rejects_reentrant_operations() {
     let pending = ControlState {
         strong_count: 0,
         weak_count: 2,
