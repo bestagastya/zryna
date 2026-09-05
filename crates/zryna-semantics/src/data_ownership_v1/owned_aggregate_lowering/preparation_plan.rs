@@ -13,6 +13,8 @@ use super::projection_topology::ProjectionDescriptor;
 
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub(super) struct PreparationFacts {
+    pub(super) next_borrow: u32,
+    pub(super) active_borrows: BTreeMap<raw::BorrowId, (raw::PlaceId, raw::BorrowAccess)>,
     pub(super) held_cleanup: [usize; 2],
     pub(super) string_bytes: BTreeMap<raw::PlaceId, u64>,
 }
@@ -24,6 +26,16 @@ impl PreparationFacts {
 }
 
 pub(super) enum Leaf<'f> {
+    IndexedCopy {
+        source: raw::PlaceId,
+        index: raw::ValueId,
+        cleanup: raw::CleanupPlanId,
+    },
+    IndexedClone {
+        borrow: raw::BorrowId,
+        cleanup: raw::CleanupPlanId,
+        prefix: raw::CleanupPlanId,
+    },
     Bool(bool),
     I32(i32),
     String {
@@ -51,6 +63,11 @@ pub(super) enum Leaf<'f> {
         cleanup: raw::CleanupPlanId,
         prefix: raw::CleanupPlanId,
     },
+    GenericClone {
+        source: raw::PlaceId,
+        cleanup: raw::CleanupPlanId,
+        prefix: raw::CleanupPlanId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,6 +85,26 @@ pub(super) struct StringRead {
 }
 
 pub(super) enum Operation<'f> {
+    ReplaceProjection {
+        place: raw::PlaceId,
+        value: raw::ValueId,
+    },
+    VecPush {
+        vector: raw::PlaceId,
+        value: raw::ValueId,
+        cleanup: raw::CleanupPlanId,
+    },
+    IndexedEnter {
+        end: usize,
+        result: usize,
+    },
+    IndexedExit,
+    IndexedEffect(raw::InstructionKind),
+    GenericClonePrefix {
+        id: raw::CleanupPlanId,
+        owner: raw::PlaceId,
+        actions: usize,
+    },
     ScalarEnter {
         kind: super::super::scalar_operations::ScalarOperation,
         end: usize,
@@ -132,6 +169,7 @@ pub(super) enum Operation<'f> {
 pub(super) enum CallKind {
     String,
     Vec,
+    Generic,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -139,6 +177,7 @@ pub(super) struct CallSignature {
     pub(super) id: raw::FunctionId,
     pub(super) result: Ty,
     pub(super) parameter: Option<Ty>,
+    pub(super) arity: usize,
     pub(super) kind: CallKind,
     pub(super) bytes: Option<StringBytes>,
 }
